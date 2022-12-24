@@ -34,7 +34,7 @@ static int receive(int socketDescriptor, char *retBuffer, int size) {
 
 /*  handle an established connection (information are printed here) */
 static void handleConnection(int currentSocketDescriptor) {
-    unsigned int addressLength;
+    unsigned int networkLen;
     int len, exit_status = 0;
     char *message, *answer;
 
@@ -64,12 +64,12 @@ static void handleConnection(int currentSocketDescriptor) {
     close(currentSocketDescriptor);
 }
 
-/*  main program    */
+/*  main function   */
 int main(int argc, char *argv[]) {
     int socketDescriptor, currentSocketDescriptor;
     int socketAddressLength, port;
     int len;
-    unsigned int addressLength;
+    unsigned int networkLen;
     char *command, *answer;
     struct sockaddr_in socketAddress, clientSocketAddress;
     
