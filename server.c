@@ -44,7 +44,7 @@ static void handleConnection(int currentSocketDescriptor) {
         perror("receive");
         exit(1);
     }
-    printf("supervisor server: [number of consumers: %d]\n", consumers);
+    printf("monitor server: [number of consumers: %d]\n", consumers);
     int msg[consumers + 2];
 
     for(;;) {
@@ -52,7 +52,7 @@ static void handleConnection(int currentSocketDescriptor) {
             break;
         /*  ntohl shall return the argument value converted from 
             network to host byte order   */
-        printf("supervisor server:\n[queue: %d], [produced: %d]",
+        printf("monitor server:\n[queue: %d], [produced: %d]",
                 ntohl(msg[0]), ntohl(msg[1]));
         for (int i = 2; i < consumers + 2; i++) {
             printf(", [%d]: %d", i - 2, ntohl(msg[i]));
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
     
     /*  reading server port number  */
     if (argc < 2) {
-        printf("usage: server <port>\n");
+        printf("usage: %s <port>\n", args[0]);
         exit(0);
     }
     sscanf(argv[1], "%d", &port);
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
     socketAddressLength = sizeof(clientSocketAddress);
     /*  accept and serve all incoming connections in a loop */
     for(;;) {
-        printf("supervisor server: [status: READY]");
+        printf("monitor server: [status: READY]");
         if ((currentSocketDescriptor = accept(socketDescriptor,
             (struct sockaddr*)&clientSocketAddress, &socketAddressLength)) == -1) {
             perror("accept");

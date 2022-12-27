@@ -9,8 +9,8 @@
 #include <string.h>
 #include <pthread.h>
 
-#define BUFFER_SIZE 16
-#define MESSAGES 1024
+#define BUFFER_SIZE 128
+#define MESSAGES 16384
 #define MAX_WAIT 1E9
 
 #define ANSI_COLOR_RED     "\x1b[31m"
@@ -27,7 +27,7 @@
 /*  IPC variables   */
 pthread_mutex_t mutexLock;
 pthread_cond_t conditionWait_write, conditionWait_read;
-/*   indexes for buffer reading/writing   */
+/*   indexes for reading/writing buffer's items */
 int write_pos = 0, read_pos = 0;
 
 int buffer[BUFFER_SIZE];
@@ -38,16 +38,16 @@ int msg_produced = 0;
 /*  array of integers representing the number of messages consumed by each consumer */
 int *msg_consumed;
 /*  when the producer has produced the MESSAGES is set to TRUE  */
-char completed = FALSE;
+char producingCompleted = FALSE;
 
-/*  monitor struct to supervise single producer multiple consumers  */
+/*  monitor struct to supervise single producer multiple consumers activity */
 struct monitor {
     int time;
     int consumers;
     struct sockaddr_in server;
 }
 
-/*  the current thread stops and wait for a random value of nanoseconds*/
+/*  the current thread stops and wait (sleep) for a random value of nanoseconds */
 static void thread_sleep(const long max) {
     long nanoseconds = rand() % max;
     static struct timespec wait = {
@@ -80,7 +80,7 @@ static void *producer(void *arg) {
     }
     /*  inform all the consumers about the completed production */
     pthread_mutex_lock(&mutexLock);
-    completed = TRUE;
+    producingCompleted = TRUE;
     #ifdef DEBUG
         printf(ANSI_COLOR_CYAN "Producer: completed.\n" ANSI_COLOR_RESET);
     #endif
@@ -97,9 +97,9 @@ static void* consumer(void* arg) {
     while(TRUE) {
         pthread_mutex_lock(&mutexLock);
         /*  waiting for a new item to be available  */
-        while (!completed && read_pos == write_pos)
+        while (!producingCompleted && read_pos == write_pos)
             pthread_cond_wait(&conditionWait_read, &mutexLock);
-        if (completed && read_pos == write_pos) {
+        if (producingCompleted && read_pos == write_pos) {
             pthread_mutex_unlock(&mutexLock);
             break;
         }
@@ -147,7 +147,7 @@ static void* monitoring(void* arg) {
     while(TRUE) {
         pthread_mutex_lock(&mutexLock);
         int queueLen = (write_pos - read_pos + BUFFER_SIZE) % BUFFER_SIZE;
-        if (completed && read_pos == write_pos) {
+        if (producingCompleted && read_pos == write_pos) {
             pthread_mutex_unlock(&mutexLock);
             break;
         }
@@ -179,92 +179,62 @@ static void* monitoring(void* arg) {
     return NULL;
 }
 
-/*  receive routine */
-static int receive(int socketDescriptor, char *retBuffer, int size) {
-    int totalSize = 0, currentSize;
-    while (totalSize < size) {
-        currentSize = recv(socketDescriptor, &retBuffer[totalSize], size - totalSize, 0);
-        if (currentSize <= 0)
-            return -1; // an error has occurred
-        totalSize += currentSize;
-    }
-    return 0;
-}
-
 /*  main function   */
 int main(int argc, char **argv) {
-    char hostname[100], command[256];
-    char *answer;
-    int socketDescriptor, port, stopped = FALSE, len;
-    unsigned int networkLen;
-    struct sockaddr_in socketAddress;
-    struct hostent *host;
-    /*  getting IP address and port number  */
-    if (argc < 3) {
-        printf("usage: client <hostname> <port>\n");
+    char monitorServerAddress[16];
+    int port, consumers, monitor_time;
+    /*  getting input from command line arguments   */
+    if (argc < 5) {
+        printf("usage: %s <number of consumers: [int]> <monitor server address: [char*]> 
+                <monitor server port: [int]> <monitor scan period (s): [int]>\n",
+                args[0]);
         exit(0);
     }
-    sscanf(argv[1], "%s", hostname);
-    sscanf(argv[2], "%d", &port);
-    /*  resolve the passed name and store the resulting long
-        representation in the struct hostent variable   */
-    if ((host = gethostbyname(hostname)) == 0) {
-        perror("gethostbyname");
+    sscanf(argv[1], "%d", consumers);
+    sscanf(argv[2], "%15s", monitorServerAddress);
+    sscanf(argv[3], "%d", port);
+    sscanf(argv[4], "%d", monitor_time);
+    
+    /*  initialize mutex and condition wait global variables    */
+    pthread_mutex_init(&mutexLock, NULL);
+    pthread_cond_init(&conditionWait_read, NULL);
+    pthread_cond_init(&conditionWait_write, NULL);
+    /* producer thread  */
+    pthread_t threads[consumers + 2]; // + producer + monitor
+    printf("producer thread started.\n");
+    pthread_create(&threads[0], NULL, producer, NULL);
+    /*  allocate the memory in advance to track consumed items for each consumer    */
+    msg_consumed = malloc(sizeof(int) * consumers);
+    if (msg_consumed == NULL) {
+        perror("malloc");
         exit(1);
     }
-    /*  fill in the socket structure with the host information  */
-    memset(&socketAddress, 0, sizeof(socketAddress));
-    socketAddress.sin_family = AF_INET;
-    socketAddress.sin_addr.s_addr = ((struct in_addr *)(host -> h_addr_list[0])) -> s_addr;
-    socketAddress.sin_port = htons(port);
-    /*  create a new socket */
-    if ((socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        exit(1);
+    /*  consumer threads    */
+    printf("consumer threads starting...\n");
+    for (int i = 1; i <= consumers; i++) {
+        int* identifier = malloc(sizeof(*identifier));
+        if (identifier == NULL) {
+            perror("malloc");
+            exit(1);
+        }
+        *identifier = i;
+        pthread_create(&threads[i], NULL, consumer, identifier);
+        printf("consumer %d started\n", i);
     }
-    /*  connect the socket to the port and host specified in struct sockaddr_in */
-    if (connect(socketDescriptor, (struct sockaddr *)&socketAddress,
-        sizeof(socketAddress)) == -1) {
-        perror("connect");
-        exit(1);
+    /*  seeting monitor's parameters    */
+    struct monitor parameters = {
+        parameters.time = monitor_time;
+        parameters.consumers = consumers;
+        parameters.server.sin_family = AF_INET;
+        parameters.server.sin_port = htons(port);
+        parameters.server.sin_addr.s_addr = inet_addr(monitorServerAddress);
     }
 
-    while(!stopped) {
-        /*  get a string command from terminal  */
-        printf("enter command: ");
-        scanf("%s", command);
-        if (!strcmp(command, "quit")) break;
-        len = strlen(command); // send first the number of characters in the command
-        networkLen = htonl(len); // converting integer number into network byte order
-        /*  sending the number of charachters in the command    */
-        if (send(socketDescriptor, &networkLen, sizeof(networkLen), 0) == -1) {
-            perror("send");
-            exit(1);
-        }
-        /*  sending the command */
-        if (send(socketDescriptor, command, len, 0) == -1) {
-            perror("send");
-            exit(1);
-        }
-        /*  receive the answer: (number of characters, answer)  */
-        if (receive(socketDescriptor, (char *)&networkLen, sizeof(networkLen))) {
-            perror("recv");
-            exit(1);
-        }
-        /*  convert from network byte order */
-        len = ntohl(networkLen);
-        /*  allocate and receive the answer */
-        answer = malloc(len + 1);
-        if (receive(socketDescriptor, answer, len)) {
-            perror("recv");
-            exit(1);
-        }
-        answer[len] = 0;
-        printf("%s\n", answer);
-        free(answer);
-        if (!strcmp(command, "stop"))
-            break;
+    pthread_create(&threads[consumers + 1], NULL, monitoring, &parameters);
+    printf("monitor started\n");
+    for (int i = 0; i < consumers + 1; i++) {
+        pthread_join(threads[i], NULL);
     }
-    close(socketDescriptor);
+    free(msg_consumed);
     return 0;
 }
