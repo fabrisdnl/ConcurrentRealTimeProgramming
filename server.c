@@ -36,7 +36,7 @@ static int receive(int socketDescriptor, char *retBuffer, int size) {
 static void handleConnection(int currentSocketDescriptor) {
     unsigned int networkLen;
     int len, exit_status = 0;
-    char *message, *answer;
+    char *message;
 
     /* expecting number of consumers as first message   */
     int consumers = 0;
@@ -47,12 +47,14 @@ static void handleConnection(int currentSocketDescriptor) {
     printf("monitor server: [number of consumers: %d]\n", consumers);
     int msg[consumers + 2];
 
-    for(;;) {
-        if (receive(currentSocketDescriptor, (char*)&msg, sizeof(msg)) == -1)
+    while(TRUE) {
+        if (receive(currentSocketDescriptor, (char*)&msg, sizeof(msg)) == -1) {
+            printf("monitor stopped\n");
             break;
+        }
         /*  ntohl shall return the argument value converted from 
             network to host byte order   */
-        printf("monitor server:\n[queue: %d], [produced: %d]",
+        printf("monitor server: [queue length: %d], [message produced: %d]",
                 ntohl(msg[0]), ntohl(msg[1]));
         for (int i = 2; i < consumers + 2; i++) {
             printf(", [%d]: %d", i - 2, ntohl(msg[i]));
@@ -70,15 +72,14 @@ int main(int argc, char *argv[]) {
     int socketAddressLength, port;
     int len;
     unsigned int networkLen;
-    char *command, *answer;
     struct sockaddr_in socketAddress, clientSocketAddress;
-    
     /*  reading server port number  */
     if (argc < 2) {
-        printf("usage: %s <port>\n", args[0]);
+        printf("usage: %s <port>\n", argv[0]);
         exit(0);
     }
     sscanf(argv[1], "%d", &port);
+
     /*  creating a new socket   */
     if ((socketDescriptor = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         perror("socket creation");
