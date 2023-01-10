@@ -9,7 +9,7 @@
 #include <string.h>
 #include <pthread.h>
 
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 16
 #define MESSAGES 1024
 #define MAX_WAIT 1E9
 
@@ -72,7 +72,6 @@ static void *producer(void *arg) {
             printf(ANSI_COLOR_CYAN "Producer: %d\n" ANSI_COLOR_RESET, i);
         #endif
         buffer[write_pos] = i;
-        msg_produced++;
         /*  after placing the item in the buffer, 
             write_pos index must be incremented   */
         write_pos = (write_pos + 1) % BUFFER_SIZE;
@@ -80,6 +79,7 @@ static void *producer(void *arg) {
         pthread_cond_signal(&conditionWait_read);
         /*  leaving critical section    */
         pthread_mutex_unlock(&mutexLock);
+        msg_produced++;
     }
     /*  inform all the consumers about the completed production */
     pthread_mutex_lock(&mutexLock);
@@ -97,7 +97,7 @@ static void* consumer(void* arg) {
     int identifier = *((int*)arg);
     free(arg);
     int itemConsumed;
-    while(TRUE) {
+    for(;;) {
         /*  entering critical section   */
         pthread_mutex_lock(&mutexLock);
         /*  waiting for a new item to be available  */
