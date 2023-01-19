@@ -1,6 +1,6 @@
 
-PROGRAMS = prodcons \
-			monitor
+PROGRAMS = client \
+			server
 
 LDLIBS = -lpthread
 
