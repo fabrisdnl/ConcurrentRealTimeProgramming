@@ -89,14 +89,14 @@ int main(int argc, char* args[]) {
         }
         /* When execution reaches this point a client established the connection.
            The returned socket (currSd) is used to communicate with the client */
-        printf("Monitor: Connection established from %s\n", inet_ntoa(address.sin_addr));
+        printf("Connection established from %s\n", inet_ntoa(address.sin_addr));
         /* As first message receive the number of consumers */
         int consumers_number = 0;
         if (receive(currentSocketDescriptor, (char*)&consumers_number, sizeof(int)) < 0) {
             perror("receive");
             exit(1);
         }
-        printf("Monitor: Received consumers number -> %d\n" ANSI_COLOR_RESET, consumers_number);
+        printf("Received consumers number -> %d\n" ANSI_COLOR_RESET, consumers_number);
 
         int message[consumers_number + 2];
         while (TRUE) {
@@ -104,14 +104,14 @@ int main(int argc, char* args[]) {
                 printf(ANSI_COLOR_RED "Monitor: No more items from %s\n" ANSI_COLOR_RESET, inet_ntoa(address.sin_addr));
                 break;
             }
-            printf("[Monitor server]: queue length -> %d, items produced -> %d", ntohl(message[0]), ntohl(message[1]));
+            printf("[Server]: queue length -> %d, items produced -> %d", ntohl(message[0]), ntohl(message[1]));
             for (int i = 2; i < consumers_number + 2; i++) {
                 printf(", [Consumer %d] -> %d", i - 2, ntohl(message[i]));
             }
             printf("\n");
         }
         /* The loop is most likely exited when the connection is terminated */
-        printf(ANSI_COLOR_RED "Monitor: Connection terminated with %s\n" ANSI_COLOR_RESET, inet_ntoa(address.sin_addr));
+        printf(ANSI_COLOR_RED "Connection terminated with %s\n" ANSI_COLOR_RESET, inet_ntoa(address.sin_addr));
         close(currentSocketDescriptor);
     }
     return 0; // never reached
