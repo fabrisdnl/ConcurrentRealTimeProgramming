@@ -25,7 +25,7 @@
 #define FALSE 0
 #define TRUE 1
 
-/* Inter-process communication (IPC) */
+/* Global variables */
 pthread_mutex_t mutex;
 pthread_cond_t roomAvailable, dataAvailable;
 int buffer[BUFFER_SIZE];
