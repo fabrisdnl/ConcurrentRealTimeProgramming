@@ -13,7 +13,7 @@
 #define PRODUCER_MAX_WAIT 3E8 // Maximum random sleep time for a producer
 #define CONSUMER_MAX_WAIT 1E9 // Maximum random sleep time for a consumer
 
-/* Debug print colors */
+/* Print colors */
 #define ANSI_COLOR_RED "\x1b[31m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_YELLOW "\x1b[33m"
@@ -27,7 +27,7 @@
 
 /* Inter-process communication (IPC) */
 pthread_mutex_t mutex;
-pthread_cond_t write_condition, read_condition;
+pthread_cond_t roomAvailable, dataAvailable;
 int buffer[BUFFER_SIZE];
 int index_write = 0;
 int index_read = 0;
@@ -56,25 +56,19 @@ static void* producer(void* arg) {
         random_sleep(PRODUCER_MAX_WAIT);
         pthread_mutex_lock(&mutex);
         while ((index_write + 1) % BUFFER_SIZE == index_read) {
-            pthread_cond_wait(&write_condition, &mutex);
+            pthread_cond_wait(&roomAvailable, &mutex);
         }
-        #ifdef DEBUG
-            printf(ANSI_COLOR_RED "[P ]: + %d\n" ANSI_COLOR_RESET, i);
-        #endif
         /* Update the buffer */
         buffer[index_write] = i;
         index_write = (index_write + 1) % BUFFER_SIZE;
         /* Inform consumers a new item has been produced */
-        pthread_cond_signal(&read_condition);
+        pthread_cond_signal(&dataAvailable);
         pthread_mutex_unlock(&mutex);
         items_produced += 1;
     }
     pthread_mutex_lock(&mutex);
     producing_completed = TRUE;
-    #ifdef DEBUG
-        printf(ANSI_COLOR_RED "[Producer]: finished.\n" ANSI_COLOR_RESET);
-    #endif
-    pthread_cond_broadcast(&read_condition);
+    pthread_cond_broadcast(&dataAvailable);
     pthread_mutex_unlock(&mutex);
     return NULL;
 }
@@ -89,7 +83,7 @@ static void* consumer(void* arg) {
     while (TRUE) {
         pthread_mutex_lock(&mutex);
         while (!producing_completed && index_read == index_write) {
-            pthread_cond_wait(&read_condition, &mutex);
+            pthread_cond_wait(&dataAvailable, &mutex);
         }
         if (producing_completed && index_read == index_write) {
             pthread_mutex_unlock(&mutex);
@@ -98,11 +92,8 @@ static void* consumer(void* arg) {
         item = buffer[index_read];
         index_read = (index_read + 1) % BUFFER_SIZE;
         consumed[id - 1] += 1;
-        pthread_cond_signal(&write_condition);
+        pthread_cond_signal(&roomAvailable);
         pthread_mutex_unlock(&mutex);
-        #ifdef DEBUG
-                printf(ANSI_COLOR_GREEN "[Consumer %d]: %d\n" ANSI_COLOR_RESET, id, item);
-        #endif
         random_sleep(CONSUMER_MAX_WAIT);
     }
     return NULL;
@@ -133,9 +124,6 @@ static void* monitor(void* arg) {
         perror("connect");
         exit(1);
     }
-    #ifdef DEBUG
-        printf(ANSI_COLOR_BLUE "[Monitor thread]: Connected to monitor server\n" ANSI_COLOR_RESET);
-    #endif
     /* Send number of consumer threads to the server */
     if (send(socketDescriptor, &consumers_number, sizeof(consumers_number), 0) < 0) {
         perror("send");
@@ -149,13 +137,6 @@ static void* monitor(void* arg) {
             break;
         }
         pthread_mutex_unlock(&mutex);
-        #ifdef DEBUG
-            printf(ANSI_COLOR_BLUE "Monitor: queue length -> %d, items produced -> %d,", queue_length, items_produced);
-            for (int i = 0; i < consumers_number; i++) {
-                printf(" [Consumer %d]: %d", i, consumed[i]);
-            }
-            printf("\n" ANSI_COLOR_RESET);
-        #endif
         /* Prepare information to send to the server */
         int message[consumers_number + 2];
         message[0] = htonl(queue_length);
@@ -189,11 +170,11 @@ int main(int argc, char* args[]) {
 
     /* Initialize IPC */
     pthread_mutex_init(&mutex, NULL);
-    pthread_cond_init(&write_condition, NULL);
-    pthread_cond_init(&read_condition, NULL);
+    pthread_cond_init(&roomAvailable, NULL);
+    pthread_cond_init(&dataAvailable, NULL);
     /* Create producer thread */
     pthread_t threads[consumers_number + 2];
-    printf("Creating producer...\n");
+    printf(ANSI_COLOR_GREEN "Creating producer...\n");
     pthread_create(&threads[0], NULL, producer, NULL);
     /* Allocate memory */
     consumed = malloc(sizeof(int) * consumers_number);
@@ -224,7 +205,7 @@ int main(int argc, char* args[]) {
             },
         },
     };
-    printf("Creating monitor...\n");
+    printf("Creating monitor...\n" ANSI_COLOR_RESET);
     pthread_create(&threads[consumers_number + 1], NULL, monitor, &parameters);
 
     for (int i = 0; i < consumers_number + 1; i++) {
