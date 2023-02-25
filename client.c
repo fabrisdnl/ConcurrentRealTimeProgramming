@@ -26,13 +26,17 @@
 #define TRUE 1
 
 /* Global variables */
+
 pthread_mutex_t mutex;
 pthread_cond_t roomAvailable, dataAvailable;
+
 int buffer[BUFFER_SIZE];
 int index_write = 0;
 int index_read = 0;
+
 char producing_completed = FALSE;
 int items_produced = 0;
+
 int* consumed;
 
 /* Make sleep the current thread for a random amount of time between 0 and max_nanoseconds */
@@ -99,7 +103,7 @@ static void* consumer(void* arg) {
     return NULL;
 }
 
-/* Contains parameters for the server's monitor thread */
+/* Contains parameters for the monitor thread */
 struct monitor_parameters
 {
     int print_interval;
